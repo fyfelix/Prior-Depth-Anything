@@ -16,7 +16,7 @@ DEFAULT_OUTPUT_DIR="${SCRIPT_DIR}/output"
 usage() {
     cat <<'EOF'
 Usage:
-  ./evaluation/run_eval.sh [ckpt_dir=ckpts] [camera_type=d435] [frozen_size=vitb] [conditioned_size=vitb] [version=1.1] [cleanup_npy=false]
+  ./evaluation/run_eval.sh [ckpt_dir=ckpts] [camera_type=d435] [frozen_size=vitl] [conditioned_size=vitb] [version=1.1] [cleanup_npy=false]
 
 Environment overrides:
   CKPT_DIR              Directory containing prior_depth_anything_<size>[_1_1].pth. Default: ckpts
@@ -47,7 +47,7 @@ fi
 
 ckpt_dir="${1:-${CKPT_DIR:-${DEFAULT_CKPT_DIR}}}"
 camera_type="${2:-d435}"
-frozen_size="${3:-vitb}"
+frozen_size="${3:-vitl}"
 conditioned_size="${4:-vitb}"
 version="${5:-1.1}"
 cleanup_npy="${6:-false}"

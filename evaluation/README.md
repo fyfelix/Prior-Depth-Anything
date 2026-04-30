@@ -5,7 +5,7 @@
 ## 适配模型
 
 - 模型：`PriorDepthAnything`
-- 默认架构：`version=1.1`，`frozen_model_size=vitb`，`conditioned_model_size=vitb`
+- 默认架构：`version=1.1`，`frozen_model_size=vitl`，`conditioned_model_size=vitb`
 - 输入类型：RGB-D / depth completion
 - HAMMER raw depth 来源：由 `--raw-type` / `camera_type` 选择，可选 `d435`、`l515`、`tof`
 - 输出：每个 sample 保存一个 `HxW float32` 的 metric depth `.npy`，单位为 meter
@@ -41,19 +41,19 @@ pip install -r evaluation/requirements.txt
 默认情况下，脚本会从 `ckpts/` 读取以下两个本地权重文件：
 
 ```text
-ckpts/depth_anything_v2_vitb.pth
+ckpts/depth_anything_v2_vitl.pth
 ckpts/prior_depth_anything_vitb_1_1.pth
 ```
 
 默认数据集为 `data/HAMMER/test.jsonl`，默认输出到 `evaluation/output`，默认保存 `*_pred_depth.png` 可视化，并默认保留生成的 `.npy` 预测文件。
 
-若 `depth_anything_v2_vitb.pth` 存在其他位置，请设置 `MDE_DIR`；若需要使用 Hugging Face 自动下载权重，可把第一个参数和 `MDE_DIR` 都设为 `auto`：
+若 `depth_anything_v2_vitl.pth` 存在其他位置，请设置 `MDE_DIR`；若需要使用 Hugging Face 自动下载权重，可把第一个参数和 `MDE_DIR` 都设为 `auto`：
 
 ```bash
 MDE_DIR=/path/to/mde_dir \
 DATASET_PATH=/path/to/HAMMER/test.jsonl \
 OUTPUT_DIR=/tmp/priorda_hammer \
-./evaluation/run_eval.sh /path/to/priorda_ckpt_dir d435 vitb vitb 1.1 false
+./evaluation/run_eval.sh /path/to/priorda_ckpt_dir d435 vitl vitb 1.1 false
 
 MDE_DIR=auto ./evaluation/run_eval.sh auto
 ```
@@ -61,7 +61,7 @@ MDE_DIR=auto ./evaluation/run_eval.sh auto
 参数格式：
 
 ```text
-./evaluation/run_eval.sh [ckpt_dir=ckpts] [camera_type=d435] [frozen_size=vitb] [conditioned_size=vitb] [version=1.1] [cleanup_npy=false]
+./evaluation/run_eval.sh [ckpt_dir=ckpts] [camera_type=d435] [frozen_size=vitl] [conditioned_size=vitb] [version=1.1] [cleanup_npy=false]
 ```
 
 常用环境变量：`DATASET_PATH`、`OUTPUT_DIR`、`MDE_DIR`、`BATCH_SIZE`、`NUM_WORKERS`、`DEVICE`、`PATTERN`、`SAVE_VIS`、`COARSE_ONLY`、`PRIOR_COVER`、`DOWN_FILL_MODE`、`CLAMP_TO_DEPTH_RANGE`、`PYTHON_BIN`。如果未设置 `PYTHON_BIN`，脚本会先尝试 `python`，再回退到 `python3`。

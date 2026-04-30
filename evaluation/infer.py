@@ -95,7 +95,7 @@ def parse_arguments():
     parser.add_argument(
         "--frozen-model-size",
         choices=["vits", "vitb", "vitl"],
-        default="vitb",
+        default="vitl",
         help="Depth Anything V2 backbone size for coarse stage",
     )
     parser.add_argument(
