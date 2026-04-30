@@ -126,7 +126,14 @@ def parse_arguments():
     parser.add_argument("--batch-size", type=int, default=1)
     parser.add_argument("--num-workers", type=int, default=0)
     parser.add_argument("--device", default=None)
-    parser.add_argument("--save-vis", action="store_true")
+    parser.add_argument(
+        "--save-vis",
+        nargs="?",
+        const=True,
+        type=str2bool,
+        default=True,
+        help="Save *_pred_depth.png visualizations",
+    )
     parser.add_argument("--clamp-to-depth-range", type=str2bool, default=False)
     return parser.parse_args()
 

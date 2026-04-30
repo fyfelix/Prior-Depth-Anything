@@ -1,0 +1,5 @@
+-r ../requirements.txt
+
+pandas==2.2.3
+OpenEXR==3.3.2
+Imath==0.0.2

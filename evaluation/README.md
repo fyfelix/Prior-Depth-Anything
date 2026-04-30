@@ -34,25 +34,37 @@ depth-range
 从仓库根目录运行：
 
 ```bash
+pip install -r evaluation/requirements.txt
 ./evaluation/run_eval.sh
 ```
 
-默认情况下，权重会通过项目官方 Hugging Face 逻辑下载。若使用本地 checkpoint，请传入包含 `prior_depth_anything_vitb_1_1.pth` 的目录；如果 `depth_anything_v2_vitb.pth` 存在其他位置，请设置 `MDE_DIR`：
+默认情况下，脚本会从 `ckpts/` 读取以下两个本地权重文件：
+
+```text
+ckpts/depth_anything_v2_vitb.pth
+ckpts/prior_depth_anything_vitb_1_1.pth
+```
+
+默认数据集为 `data/HAMMER/test.jsonl`，默认输出到 `evaluation/output`，默认保存 `*_pred_depth.png` 可视化，并默认保留生成的 `.npy` 预测文件。
+
+若 `depth_anything_v2_vitb.pth` 存在其他位置，请设置 `MDE_DIR`；若需要使用 Hugging Face 自动下载权重，可把第一个参数和 `MDE_DIR` 都设为 `auto`：
 
 ```bash
 MDE_DIR=/path/to/mde_dir \
 DATASET_PATH=/path/to/HAMMER/test.jsonl \
 OUTPUT_DIR=/tmp/priorda_hammer \
 ./evaluation/run_eval.sh /path/to/priorda_ckpt_dir d435 vitb vitb 1.1 false
+
+MDE_DIR=auto ./evaluation/run_eval.sh auto
 ```
 
 参数格式：
 
 ```text
-./evaluation/run_eval.sh [ckpt_dir=auto] [camera_type=d435] [frozen_size=vitb] [conditioned_size=vitb] [version=1.1] [cleanup_npy=false]
+./evaluation/run_eval.sh [ckpt_dir=ckpts] [camera_type=d435] [frozen_size=vitb] [conditioned_size=vitb] [version=1.1] [cleanup_npy=false]
 ```
 
-常用环境变量：`DATASET_PATH`、`OUTPUT_DIR`、`MDE_DIR`、`BATCH_SIZE`、`NUM_WORKERS`、`DEVICE`、`PATTERN`、`COARSE_ONLY`、`PRIOR_COVER`、`DOWN_FILL_MODE`、`CLAMP_TO_DEPTH_RANGE`、`PYTHON_BIN`。如果未设置 `PYTHON_BIN`，脚本会先尝试 `python`，再回退到 `python3`。
+常用环境变量：`DATASET_PATH`、`OUTPUT_DIR`、`MDE_DIR`、`BATCH_SIZE`、`NUM_WORKERS`、`DEVICE`、`PATTERN`、`SAVE_VIS`、`COARSE_ONLY`、`PRIOR_COVER`、`DOWN_FILL_MODE`、`CLAMP_TO_DEPTH_RANGE`、`PYTHON_BIN`。如果未设置 `PYTHON_BIN`，脚本会先尝试 `python`，再回退到 `python3`。
 
 ## 注意事项与限制
 

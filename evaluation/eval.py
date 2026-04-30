@@ -65,6 +65,12 @@ def parse_arguments():
     parser.add_argument(
         "--image-max", type=float, default=5.0, help="Maximum valid depth value"
     )
+    parser.add_argument(
+        "--device",
+        type=str,
+        default=None,
+        help="Torch device used for metric computation. Defaults to cuda when available, otherwise cpu",
+    )
     return parser.parse_args()
 
 
@@ -141,7 +147,9 @@ args = parse_arguments()
 
 prediction_path = args.output
 
-depth_scale = 1000.0
+depth_scale = args.depth_scale
+eval_device = args.device or ("cuda" if torch.cuda.is_available() else "cpu")
+args.device = eval_device
 
 if 'hammer' in args.dataset.lower():
     dataset = HAMMERDataset(args.dataset, args.raw_type)
@@ -174,15 +182,21 @@ eval_dataset = EvalDataset(dataset, prediction_path, args, depth_scale, align=AL
 batch_size = 1 if ALIGN else 32 
 num_workers = 0 if ALIGN else 8
 
-loader = DataLoader(eval_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True)
+loader = DataLoader(
+    eval_dataset,
+    batch_size=batch_size,
+    shuffle=False,
+    num_workers=num_workers,
+    pin_memory=eval_device.startswith("cuda"),
+)
 
 for batch in tqdm(loader):
     names = batch['name']
     
-    # Move to GPU
-    pred_depth_ts = batch['pred'].cuda()
-    gt_depth_ts = batch['gt'].cuda()
-    mask_ts = batch['mask'].cuda()
+    # Move tensors to the selected metric device
+    pred_depth_ts = batch['pred'].to(eval_device, non_blocking=True)
+    gt_depth_ts = batch['gt'].to(eval_device, non_blocking=True)
+    mask_ts = batch['mask'].to(eval_device, non_blocking=True)
     
     # Compute metrics with reduction='none' to get per-sample results
     # All these return (B,) tensors
