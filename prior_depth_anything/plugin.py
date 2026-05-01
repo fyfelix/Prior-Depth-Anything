@@ -83,22 +83,22 @@ class PriorDARefinerMetrics:
         return raw_m, ref_m
 
 class PriorDARefiner(PriorDepthAnything):
-    def __init__(self, 
-        device: str = 'cuda:0', 
-        coarse_only: bool = False, 
-        mde_dir: Optional[str] = None, 
-        ckpt_dir: Optional[str] = None, 
-        frozen_model_size: Optional[str] = None, 
+    def __init__(self,
+        device: str = 'cuda:0',
+        coarse_only: bool = False,
+        mde_path: Optional[str] = None,
+        ckpt_path: Optional[str] = None,
+        frozen_model_size: Optional[str] = None,
         conditioned_model_size: Optional[str] = None,
         version="1.0"
     ):
         
         super(PriorDARefiner, self).__init__(
-            device=device, 
-            coarse_only=coarse_only, 
-            mde_dir=mde_dir, 
-            ckpt_dir=ckpt_dir,
-            frozen_model_size=frozen_model_size, 
+            device=device,
+            coarse_only=coarse_only,
+            mde_path=mde_path,
+            ckpt_path=ckpt_path,
+            frozen_model_size=frozen_model_size,
             conditioned_model_size=conditioned_model_size,
             version=version
         )
@@ -134,7 +134,7 @@ class PriorDARefiner(PriorDepthAnything):
         
         sampled = depth_map * ((confidence > thres) | extra_sampled_mask)
         return sampled
-    
+
     def norm_sample(self, image, depth_map, confidence, thres):
         norm_conf = (confidence - confidence.min()) / (confidence.max() - confidence.min())
         extra_depth = depth_map * (norm_conf < thres).to(torch.float32)
@@ -183,8 +183,7 @@ class PriorDARefiner(PriorDepthAnything):
             prior = self.filter_noisy_depth[md](image, depth_map, confidence, thres)
             refined = self.infer_one_sample(image=image, prior=prior, geometric=None)
             refineds_with_diff_mode.append(refined)
-            
+
         refined_depth = torch.stack(refineds_with_diff_mode, dim=-1).mean(dim=-1)
-        
+
         return refined_depth, depth_map # return the resized depth_map for evaluation.
-    

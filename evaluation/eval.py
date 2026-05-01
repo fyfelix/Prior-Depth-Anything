@@ -1,5 +1,6 @@
 import argparse
 import cv2
+import os
 import numpy as np
 from tqdm import tqdm
 
@@ -42,7 +43,13 @@ def parse_arguments():
         "--output",
         type=str,
         default="output_dir",
-        help="Prediction output directory",
+        help="Metric and eval metadata output directory",
+    )
+    parser.add_argument(
+        "--prediction-dir",
+        type=str,
+        default=None,
+        help="Directory containing .npy predictions; defaults to --output",
     )
     parser.add_argument(
         "--raw-type", type=str, required=True, choices=["d435", "l515", "tof"], help="Raw type"
@@ -70,6 +77,12 @@ def parse_arguments():
         type=str,
         default=None,
         help="Torch device used for metric computation. Defaults to cuda when available, otherwise cpu",
+    )
+    parser.add_argument(
+        "--max-samples",
+        type=int,
+        default=0,
+        help="Maximum number of dataset samples to evaluate; 0 means all samples",
     )
     return parser.parse_args()
 
@@ -144,20 +157,25 @@ current_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
 args = parse_arguments()
 
+if args.max_samples < 0:
+    raise ValueError(f"max_samples must be non-negative, got {args.max_samples}")
 
-prediction_path = args.output
+output_dir = args.output
+prediction_path = args.prediction_dir or args.output
+args.prediction_dir = prediction_path
+os.makedirs(output_dir, exist_ok=True)
 
 depth_scale = args.depth_scale
 eval_device = args.device or ("cuda" if torch.cuda.is_available() else "cpu")
 args.device = eval_device
 
 if 'hammer' in args.dataset.lower():
-    dataset = HAMMERDataset(args.dataset, args.raw_type)
+    dataset = HAMMERDataset(args.dataset, args.raw_type, max_samples=args.max_samples)
 else:
     raise ValueError(f"Invalid dataset: {args.dataset}")
 
 
-with open(join(prediction_path, 'eval_args.json'), 'w') as f:
+with open(join(output_dir, 'eval_args.json'), 'w') as f:
     json.dump(vars(args), f)
 
 
@@ -239,7 +257,7 @@ all_metrics_mean = all_metrics.mean(numeric_only=True).to_frame().T
 
 
 
-all_metrics.to_csv(join(prediction_path,f'all_metrics_{current_time}_{ALIGN}.csv'), index=False)
-all_metrics_mean.to_json(join(prediction_path, f'mean_metrics_{current_time}_{ALIGN}.json'), orient='records', lines=True, force_ascii=False)
+all_metrics.to_csv(join(output_dir,f'all_metrics_{current_time}_{ALIGN}.csv'), index=False)
+all_metrics_mean.to_json(join(output_dir, f'mean_metrics_{current_time}_{ALIGN}.json'), orient='records', lines=True, force_ascii=False)
 from loguru import logger
-logger.info(f'save dir: {prediction_path}')
+logger.info(f'save dir: {output_dir}')

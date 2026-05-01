@@ -5,7 +5,7 @@ from torch.utils.data import Dataset
 
 
 class HAMMERDataset(Dataset):
-    def __init__(self, jsonl_path, raw_type="d435"):
+    def __init__(self, jsonl_path, raw_type="d435", max_samples=0):
         self.jsonl_path = jsonl_path
         self.root = dirname(jsonl_path)
         self.data = []
@@ -13,6 +13,11 @@ class HAMMERDataset(Dataset):
         with open(jsonl_path, "r", encoding="utf-8") as file:
             for line in file:
                 self.data.append(json.loads(line))
+
+        if max_samples < 0:
+            raise ValueError(f"max_samples must be non-negative, got {max_samples}")
+        if max_samples > 0:
+            self.data = self.data[:max_samples]
 
         self.raw_type = raw_type
         self.depth_range = self.data[0]["depth-range"]

@@ -101,8 +101,8 @@ We provide two ways that allow you to utilize geometric information from other d
 ### More options:
 
 #### &ensp;&ensp;Model Configurations
-- `mde_dir`: Directory of the monocular depth model backbone.
-- `ckpt_dir`: Directory of the fine-stage model fintuned by us.
+- `mde_path`: Path of the monocular depth model backbone checkpoint.
+- `ckpt_path`: Path of the fine-stage model finetuned by us.
 - `frozen_model_size`: Specify the size of the coarse-stage model(choices=['vits', 'vitb', 'vitl']).
 - `conditioned_model_size`: Specify the size of the fine-stage model(choices=['vits', 'vitb', 'vitl'(coming soon...)]).
 

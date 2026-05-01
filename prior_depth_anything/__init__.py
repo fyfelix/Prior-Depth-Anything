@@ -29,8 +29,8 @@ class PriorDepthAnything(nn.Module):
     def __init__(self, 
         device: str = 'cuda:0', 
         version: str = '1.1',
-        mde_dir: Optional[str] = None,
-        ckpt_dir: Optional[str] = None,
+        mde_path: Optional[str] = None,
+        ckpt_path: Optional[str] = None,
         frozen_model_size: Optional[str] = None, 
         conditioned_model_size: Optional[str] = None,
         coarse_only: bool = False
@@ -56,14 +56,12 @@ class PriorDepthAnything(nn.Module):
         if self.args.frozen_model_size in ['vitg']:
             raise ValueError(f'{self.args.frozen_model_size} coming soon...')
         fmde_name = f'depth_anything_v2_{self.args.frozen_model_size}.pth' # Download model checkpoints
-        if mde_dir is None:
-            fmde_path = hf_hub_download(repo_id=self.args.repo_name, filename=fmde_name)
-        else:
-            fmde_path = os.path.join(mde_dir, fmde_name)
-        print(f"Loading pretrained fmde from {fmde_path}...")
+        if mde_path is None:
+            mde_path = hf_hub_download(repo_id=self.args.repo_name, filename=fmde_name)
+        print(f"Loading pretrained fmde from {mde_path}...")
         
         # Initialize Frozon-MDE.
-        self.completion = DepthCompletion.build(args=self.args, fmde_path=fmde_path, device=device)
+        self.completion = DepthCompletion.build(args=self.args, fmde_path=mde_path, device=device)
         
         ## Conditioned MDE loading.
         if not coarse_only:
@@ -77,16 +75,14 @@ class PriorDepthAnything(nn.Module):
             )
             model.construct_aux_layers()
 
-            self.model = self.load_checkpoints(model, ckpt_dir, postfix, self.device).eval()
+            self.model = self.load_checkpoints(model, ckpt_path, postfix, self.device).eval()
             
         self.sampler = SparseSampler(device=device, completion=self.completion)
     
-    def load_checkpoints(self, model, ckpt_dir, postfix='', device='cuda:0'):
+    def load_checkpoints(self, model, ckpt_path=None, postfix='', device='cuda:0'):
         ckpt_name = f'prior_depth_anything_{self.args.conditioned_model_size}{postfix}.pth'
-        if ckpt_dir is None:
+        if ckpt_path is None:
             ckpt_path = hf_hub_download(repo_id=self.args.repo_name, filename=ckpt_name)
-        else:
-            ckpt_path = os.path.join(ckpt_dir, ckpt_name)
         print(f"Loading checkpoint from {ckpt_path}...")
         
         state_dict = torch.load(ckpt_path, map_location='cpu')

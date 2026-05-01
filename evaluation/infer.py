@@ -73,7 +73,17 @@ def parse_arguments():
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument("--dataset", required=True, help="HAMMER JSONL path")
-    parser.add_argument("--output", default="output_dir", help="Output directory")
+    parser.add_argument("--output", default="output_dir", help="Run metadata output directory")
+    parser.add_argument(
+        "--prediction-dir",
+        default=None,
+        help="Directory for .npy predictions; defaults to --output",
+    )
+    parser.add_argument(
+        "--visualization-dir",
+        default=None,
+        help="Directory for visualization files; defaults to --output",
+    )
     parser.add_argument(
         "--raw-type",
         required=True,
@@ -81,16 +91,16 @@ def parse_arguments():
         help="HAMMER raw depth field used as Prior-Depth-Anything prior",
     )
     parser.add_argument(
-        "--ckpt-dir",
+        "--priorda-ckpt",
         type=optional_path,
         default=None,
-        help="Directory containing prior_depth_anything_<size>[_1_1].pth; use auto/none for HF download",
+        help="Prior-Depth-Anything checkpoint file; use auto/none for HF download",
     )
     parser.add_argument(
-        "--mde-dir",
+        "--mde-ckpt",
         type=optional_path,
         default=None,
-        help="Directory containing depth_anything_v2_<size>.pth; use auto/none for HF download",
+        help="Depth Anything V2 checkpoint file; use auto/none for HF download",
     )
     parser.add_argument(
         "--frozen-model-size",
@@ -125,6 +135,12 @@ def parse_arguments():
     parser.add_argument("--image-max", type=float, default=5.0)
     parser.add_argument("--batch-size", type=int, default=1)
     parser.add_argument("--num-workers", type=int, default=0)
+    parser.add_argument(
+        "--max-samples",
+        type=int,
+        default=0,
+        help="Maximum number of dataset samples to process; 0 means all samples",
+    )
     parser.add_argument("--device", default=None)
     parser.add_argument(
         "--save-vis",
@@ -132,7 +148,7 @@ def parse_arguments():
         const=True,
         type=str2bool,
         default=True,
-        help="Save *_pred_depth.png visualizations",
+        help="Save *_promptda_vis.jpg visualizations",
     )
     parser.add_argument("--clamp-to-depth-range", type=str2bool, default=False)
     return parser.parse_args()
@@ -185,8 +201,8 @@ def build_model(args):
     model = PriorDepthAnything(
         device=device,
         version=args.version,
-        mde_dir=args.mde_dir,
-        ckpt_dir=args.ckpt_dir,
+        mde_path=args.mde_ckpt,
+        ckpt_path=args.priorda_ckpt,
         frozen_model_size=args.frozen_model_size,
         conditioned_model_size=args.conditioned_model_size,
         coarse_only=args.coarse_only,
@@ -197,7 +213,7 @@ def build_model(args):
 
 def save_visualization(pred, output_dir, name, image_min, image_max):
     vis = pred.copy()
-    path = join(output_dir, f"{name}_pred_depth.png")
+    path = join(output_dir, f"{name}_promptda_vis.jpg")
     log_img(
         vis,
         path,
@@ -210,10 +226,17 @@ def save_visualization(pred, output_dir, name, image_min, image_max):
 def inference(args):
     if not os.path.exists(args.dataset):
         raise FileNotFoundError(f"Dataset file does not exist: {args.dataset}")
+    if args.max_samples < 0:
+        raise ValueError(f"max_samples must be non-negative, got {args.max_samples}")
     load_runtime_dependencies()
+    args.prediction_dir = args.prediction_dir or args.output
+    args.visualization_dir = args.visualization_dir or args.output
     os.makedirs(args.output, exist_ok=True)
+    os.makedirs(args.prediction_dir, exist_ok=True)
+    if args.save_vis:
+        os.makedirs(args.visualization_dir, exist_ok=True)
 
-    dataset = HAMMERDataset(args.dataset, args.raw_type)
+    dataset = HAMMERDataset(args.dataset, args.raw_type, max_samples=args.max_samples)
     dataloader = DataLoader(
         dataset,
         batch_size=args.batch_size,
@@ -279,11 +302,15 @@ def inference(args):
             if args.clamp_to_depth_range:
                 pred = np.clip(pred, min_depth, max_depth).astype(np.float32)
 
-            np.save(join(args.output, f"{name}.npy"), pred)
+            np.save(join(args.prediction_dir, f"{name}.npy"), pred)
 
             if args.save_vis:
                 save_visualization(
-                    pred, args.output, name, args.image_min, args.image_max
+                    pred,
+                    args.visualization_dir,
+                    name,
+                    args.image_min,
+                    args.image_max,
                 )
 
 
