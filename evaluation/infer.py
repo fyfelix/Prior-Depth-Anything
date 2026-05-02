@@ -17,14 +17,15 @@ torch = None
 logger = None
 DataLoader = None
 tqdm = None
-HAMMERDataset = None
+load_dataset_for_eval = None
+resolve_sample_name = None
 PriorDepthAnything = None
 log_img = None
 
 
 def load_runtime_dependencies():
     global cv2, np, torch, logger, DataLoader, tqdm
-    global HAMMERDataset, PriorDepthAnything, log_img
+    global load_dataset_for_eval, resolve_sample_name, PriorDepthAnything, log_img
 
     import cv2 as _cv2
     import numpy as _np
@@ -33,7 +34,8 @@ def load_runtime_dependencies():
     from torch.utils.data import DataLoader as _DataLoader
     from tqdm import tqdm as _tqdm
 
-    from dataset import HAMMERDataset as _HAMMERDataset
+    from dataset import load_dataset_for_eval as _load_dataset_for_eval
+    from dataset import resolve_sample_name as _resolve_sample_name
     from prior_depth_anything import PriorDepthAnything as _PriorDepthAnything
     from prior_depth_anything.utils import log_img as _log_img
 
@@ -43,7 +45,8 @@ def load_runtime_dependencies():
     logger = _logger
     DataLoader = _DataLoader
     tqdm = _tqdm
-    HAMMERDataset = _HAMMERDataset
+    load_dataset_for_eval = _load_dataset_for_eval
+    resolve_sample_name = _resolve_sample_name
     PriorDepthAnything = _PriorDepthAnything
     log_img = _log_img
 
@@ -69,10 +72,10 @@ def optional_path(value):
 
 def parse_arguments():
     parser = argparse.ArgumentParser(
-        description="Prior-Depth-Anything inference for HAMMER",
+        description="Prior-Depth-Anything inference for HAMMER or ClearPose",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    parser.add_argument("--dataset", required=True, help="HAMMER JSONL path")
+    parser.add_argument("--dataset", required=True, help="HAMMER or ClearPose JSONL path")
     parser.add_argument("--output", default="output_dir", help="Run metadata output directory")
     parser.add_argument(
         "--prediction-dir",
@@ -88,7 +91,7 @@ def parse_arguments():
         "--raw-type",
         required=True,
         choices=["d435", "l515", "tof"],
-        help="HAMMER raw depth field used as Prior-Depth-Anything prior",
+        help="Raw depth source used as Prior-Depth-Anything prior; ClearPose only supports d435",
     )
     parser.add_argument(
         "--priorda-ckpt",
@@ -180,13 +183,6 @@ def read_depth_shape(depth_path):
     return depth.shape[:2]
 
 
-def sample_id_from_rgb_path(rgb_path):
-    parts = rgb_path.split("/")
-    scene_name = parts[-4]
-    stem = os.path.splitext(os.path.basename(rgb_path))[0]
-    return f"{scene_name}#{stem}"
-
-
 def build_model(args):
     device = args.device
     if device is None:
@@ -236,7 +232,9 @@ def inference(args):
     if args.save_vis:
         os.makedirs(args.visualization_dir, exist_ok=True)
 
-    dataset = HAMMERDataset(args.dataset, args.raw_type, max_samples=args.max_samples)
+    dataset = load_dataset_for_eval(
+        args.dataset, args.raw_type, max_samples=args.max_samples
+    )
     dataloader = DataLoader(
         dataset,
         batch_size=args.batch_size,
@@ -256,12 +254,12 @@ def inference(args):
 
     min_depth, max_depth = dataset.depth_range
     logger.info(
-        "Running HAMMER inference with PriorDepthAnything "
+        "Running HAMMER/ClearPose inference with PriorDepthAnything "
         f"version={args.version}, frozen={args.frozen_model_size}, "
         f"conditioned={args.conditioned_model_size}, raw_type={args.raw_type}"
     )
 
-    for batch_items in tqdm(dataloader, desc="Processing HAMMER samples"):
+    for batch_items in tqdm(dataloader, desc="Processing dataset samples"):
         rgb_paths, raw_depth_paths, gt_depth_paths = batch_items
 
         for rgb_path, raw_depth_path, gt_depth_path in zip(
@@ -270,7 +268,7 @@ def inference(args):
             rgb_path = str(rgb_path)
             raw_depth_path = str(raw_depth_path)
             gt_depth_path = str(gt_depth_path)
-            name = sample_id_from_rgb_path(rgb_path)
+            name = resolve_sample_name(rgb_path, args.dataset)
 
             raw_depth = load_depth_meters(
                 raw_depth_path, args.depth_scale, max_depth=args.max_depth

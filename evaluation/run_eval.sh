@@ -24,9 +24,11 @@ Environment overrides:
                         Default: ckpts/prior_depth_anything_vitb_1_1.pth
   MDE_CKPT              Depth Anything V2 checkpoint file.
                         Default: ckpts/depth_anything_v2_vitl.pth
-  DATASET_PATH          HAMMER JSONL path. Default: data/HAMMER/test_filled_d435.jsonl
+  DATASET_PATH          Dataset JSONL path for HAMMER or ClearPose.
+                        Default: data/HAMMER/test_filled_d435.jsonl
+                        ClearPose only supports camera_type=d435.
   OUTPUT_DIR            Base output root. Default: evaluation/output
-                        Each run writes to OUTPUT_DIR/YYYY-mm-dd_HH-MM-SS/
+                        Each run writes to OUTPUT_DIR/{hammer|clearpose}_YYYY-mm-dd_HH-MM-SS/
                         with predictions/ and visualizations/ subdirectories.
   BATCH_SIZE            Inference path batch size. Default: 1
   NUM_WORKERS           Inference DataLoader workers. Default: 0
@@ -37,7 +39,7 @@ Environment overrides:
   COARSE_ONLY           Use coarse stage only. Default: false
   PRIOR_COVER           Preserve all prior pixels for sparse patterns. Default: false
   DOWN_FILL_MODE        linear/global/knn for downscale_* patterns. Default: linear
-  CLAMP_TO_DEPTH_RANGE  Clip predictions to HAMMER depth-range. Default: false
+  CLAMP_TO_DEPTH_RANGE  Clip predictions to dataset depth-range. Default: false
   PYTHON_BIN            Python executable. Default: python, falling back to python3
 
 Default checkpoint label:
@@ -76,8 +78,17 @@ if ! [[ "${max_samples}" =~ ^[0-9]+$ ]]; then
     exit 1
 fi
 
+case "${dataset_path}" in
+    *clearpose*|*ClearPose*)
+        dataset_tag="clearpose"
+        ;;
+    *)
+        dataset_tag="hammer"
+        ;;
+esac
+
 timestamp="$(date +'%Y-%m-%d_%H-%M-%S')"
-run_output_dir="${output_dir}/${timestamp}"
+run_output_dir="${output_dir}/${dataset_tag}_${timestamp}"
 prediction_dir="${run_output_dir}/predictions"
 visualization_dir="${run_output_dir}/visualizations"
 
@@ -90,7 +101,7 @@ if [[ "${mde_ckpt}" == "none" || "${mde_ckpt}" == "null" ]]; then
 fi
 
 if [[ ! -f "${dataset_path}" ]]; then
-    echo "missing HAMMER dataset JSONL: ${dataset_path}" >&2
+    echo "missing dataset JSONL: ${dataset_path}" >&2
     exit 1
 fi
 
