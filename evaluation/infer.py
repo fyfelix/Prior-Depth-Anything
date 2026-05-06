@@ -11,21 +11,23 @@ REPO_ROOT = os.path.dirname(SCRIPT_DIR)
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
+os.environ.setdefault("OPENCV_IO_ENABLE_OPENEXR", "1")
+
 cv2 = None
 np = None
 torch = None
 logger = None
 DataLoader = None
 tqdm = None
-load_dataset_for_eval = None
-resolve_sample_name = None
+load_test_dataset = None
+sample_name_for_dataset = None
 PriorDepthAnything = None
 log_img = None
 
 
 def load_runtime_dependencies():
     global cv2, np, torch, logger, DataLoader, tqdm
-    global load_dataset_for_eval, resolve_sample_name, PriorDepthAnything, log_img
+    global load_test_dataset, sample_name_for_dataset, PriorDepthAnything, log_img
 
     import cv2 as _cv2
     import numpy as _np
@@ -34,8 +36,8 @@ def load_runtime_dependencies():
     from torch.utils.data import DataLoader as _DataLoader
     from tqdm import tqdm as _tqdm
 
-    from dataset import load_dataset_for_eval as _load_dataset_for_eval
-    from dataset import resolve_sample_name as _resolve_sample_name
+    from dataset import load_test_dataset as _load_test_dataset
+    from dataset import sample_name_for_dataset as _sample_name_for_dataset
     from prior_depth_anything import PriorDepthAnything as _PriorDepthAnything
     from prior_depth_anything.utils import log_img as _log_img
 
@@ -45,8 +47,8 @@ def load_runtime_dependencies():
     logger = _logger
     DataLoader = _DataLoader
     tqdm = _tqdm
-    load_dataset_for_eval = _load_dataset_for_eval
-    resolve_sample_name = _resolve_sample_name
+    load_test_dataset = _load_test_dataset
+    sample_name_for_dataset = _sample_name_for_dataset
     PriorDepthAnything = _PriorDepthAnything
     log_img = _log_img
 
@@ -72,26 +74,26 @@ def optional_path(value):
 
 def parse_arguments():
     parser = argparse.ArgumentParser(
-        description="Prior-Depth-Anything inference for HAMMER or ClearPose",
+        description="Prior-Depth-Anything inference for HAMMER, ClearPose, or DREDS",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    parser.add_argument("--dataset", required=True, help="HAMMER or ClearPose JSONL path")
+    parser.add_argument("--dataset", required=True, help="HAMMER, ClearPose, or DREDS JSONL path")
     parser.add_argument("--output", default="output_dir", help="Run metadata output directory")
     parser.add_argument(
         "--prediction-dir",
         default=None,
-        help="Directory for .npy predictions; defaults to --output",
+        help="Directory for .npy predictions; defaults to --output/predictions",
     )
     parser.add_argument(
         "--visualization-dir",
         default=None,
-        help="Directory for visualization files; defaults to --output",
+        help="Directory for visualization files; defaults to --output/visualizations",
     )
     parser.add_argument(
         "--raw-type",
         required=True,
         choices=["d435", "l515", "tof"],
-        help="Raw depth source used as Prior-Depth-Anything prior; ClearPose only supports d435",
+        help="Raw depth source used as Prior-Depth-Anything prior; ClearPose/DREDS use d435",
     )
     parser.add_argument(
         "--priorda-ckpt",
@@ -225,16 +227,20 @@ def inference(args):
     if args.max_samples < 0:
         raise ValueError(f"max_samples must be non-negative, got {args.max_samples}")
     load_runtime_dependencies()
-    args.prediction_dir = args.prediction_dir or args.output
-    args.visualization_dir = args.visualization_dir or args.output
+    args.prediction_dir = args.prediction_dir or join(args.output, "predictions")
+    args.visualization_dir = args.visualization_dir or join(args.output, "visualizations")
     os.makedirs(args.output, exist_ok=True)
     os.makedirs(args.prediction_dir, exist_ok=True)
     if args.save_vis:
         os.makedirs(args.visualization_dir, exist_ok=True)
 
-    dataset = load_dataset_for_eval(
+    dataset, dataset_kind = load_test_dataset(
         args.dataset, args.raw_type, max_samples=args.max_samples
     )
+    args.dataset_kind = dataset_kind
+    if hasattr(dataset, "depth_scale"):
+        args.depth_scale = dataset.depth_scale
+
     dataloader = DataLoader(
         dataset,
         batch_size=args.batch_size,
@@ -254,7 +260,7 @@ def inference(args):
 
     min_depth, max_depth = dataset.depth_range
     logger.info(
-        "Running HAMMER/ClearPose inference with PriorDepthAnything "
+        "Running HAMMER/ClearPose/DREDS inference with PriorDepthAnything "
         f"version={args.version}, frozen={args.frozen_model_size}, "
         f"conditioned={args.conditioned_model_size}, raw_type={args.raw_type}"
     )
@@ -268,7 +274,7 @@ def inference(args):
             rgb_path = str(rgb_path)
             raw_depth_path = str(raw_depth_path)
             gt_depth_path = str(gt_depth_path)
-            name = resolve_sample_name(rgb_path, args.dataset)
+            name = sample_name_for_dataset(dataset_kind, rgb_path)
 
             raw_depth = load_depth_meters(
                 raw_depth_path, args.depth_scale, max_depth=args.max_depth
@@ -290,7 +296,7 @@ def inference(args):
             pred[~np.isfinite(pred)] = 0.0
 
             gt_shape = read_depth_shape(gt_depth_path)
-            if pred.shape != gt_shape:
+            if pred.shape != gt_shape and dataset_kind != "dreds":
                 pred = cv2.resize(
                     pred,
                     (gt_shape[1], gt_shape[0]),

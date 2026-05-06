@@ -2,7 +2,9 @@ import argparse
 import json
 import os
 from datetime import datetime
-from os.path import join
+from os.path import exists, join
+
+os.environ.setdefault("OPENCV_IO_ENABLE_OPENEXR", "1")
 
 cv2 = None
 np = None
@@ -10,19 +12,20 @@ pd = None
 torch = None
 tqdm = None
 DataLoader = None
+DEVICE = "cpu"
 abs_relative_difference = None
 rmse_linear = None
 delta1_acc = None
 mae_linear = None
 delta4_acc_105 = None
 delta5_acc110 = None
-load_dataset_for_eval = None
-resolve_sample_name = None
+load_test_dataset = None
+sample_name_for_dataset = None
 
 
 def parse_arguments():
     parser = argparse.ArgumentParser(
-        description="RGBD Depth Evaluation",
+        description="Prior-Depth-Anything depth evaluation",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument(
@@ -42,7 +45,7 @@ def parse_arguments():
         "--dataset",
         type=str,
         required=True,
-        help="HAMMER or ClearPose JSONL path",
+        help="HAMMER, ClearPose, or DREDS JSONL path",
     )
     parser.add_argument(
         "--output",
@@ -54,14 +57,14 @@ def parse_arguments():
         "--prediction-dir",
         type=str,
         default=None,
-        help="Directory containing .npy predictions; defaults to --output",
+        help="Directory containing .npy predictions; defaults to --output/predictions",
     )
     parser.add_argument(
         "--raw-type",
         type=str,
         required=True,
         choices=["d435", "l515", "tof"],
-        help="Raw type; ClearPose only supports d435",
+        help="Raw type; ClearPose/DREDS use d435",
     )
     parser.add_argument(
         "--input-size", type=int, default=518, help="Input size for inference"
@@ -97,10 +100,10 @@ def parse_arguments():
 
 
 def load_runtime_dependencies():
-    global cv2, np, pd, torch, tqdm, DataLoader
+    global cv2, np, pd, torch, tqdm, DataLoader, DEVICE
     global abs_relative_difference, rmse_linear, delta1_acc, mae_linear
     global delta4_acc_105, delta5_acc110
-    global load_dataset_for_eval, resolve_sample_name
+    global load_test_dataset, sample_name_for_dataset
 
     import cv2 as _cv2
     import numpy as _np
@@ -110,8 +113,8 @@ def load_runtime_dependencies():
     from torch.utils.data import Dataset as _Dataset
     from tqdm import tqdm as _tqdm
 
-    from dataset import load_dataset_for_eval as _load_dataset_for_eval
-    from dataset import resolve_sample_name as _resolve_sample_name
+    from dataset import load_test_dataset as _load_test_dataset
+    from dataset import sample_name_for_dataset as _sample_name_for_dataset
     from utils.metric import abs_relative_difference as _abs_relative_difference
     from utils.metric import delta1_acc as _delta1_acc
     from utils.metric import delta4_acc_105 as _delta4_acc_105
@@ -125,30 +128,58 @@ def load_runtime_dependencies():
     torch = _torch
     tqdm = _tqdm
     DataLoader = _DataLoader
+    DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
     abs_relative_difference = _abs_relative_difference
     rmse_linear = _rmse_linear
     delta1_acc = _delta1_acc
     mae_linear = _mae_linear
     delta4_acc_105 = _delta4_acc_105
     delta5_acc110 = _delta5_acc110
-    load_dataset_for_eval = _load_dataset_for_eval
-    resolve_sample_name = _resolve_sample_name
+    load_test_dataset = _load_test_dataset
+    sample_name_for_dataset = _sample_name_for_dataset
     return _Dataset
 
 
 def load_gt_depth(depth_path, depth_scale, max_depth, min_depth):
     depth_GT = cv2.imread(depth_path, cv2.IMREAD_UNCHANGED)
+    if depth_GT is None:
+        raise ValueError(f"Could not load GT depth from {depth_path}")
     depth_GT = np.asarray(depth_GT).astype(np.float32) / depth_scale
     valid_mask = (depth_GT >= min_depth) & (depth_GT <= max_depth)
     depth_GT[~valid_mask] = min_depth
     return depth_GT, valid_mask
 
 
+def align_prediction_shape(pred, gt_shape, dataset_kind, name):
+    if pred.shape == gt_shape:
+        return pred
+
+    if dataset_kind != "dreds":
+        raise ValueError(
+            f"Prediction/GT shape mismatch for {name}: "
+            f"dataset_kind={dataset_kind}, pred_shape={pred.shape}, gt_shape={gt_shape}"
+        )
+
+    if pred.ndim != 2 or len(gt_shape) != 2:
+        raise ValueError(
+            f"DREDS evaluation expects 2D depth maps for {name}: "
+            f"pred_shape={pred.shape}, gt_shape={gt_shape}"
+        )
+
+    gt_height, gt_width = gt_shape
+    return cv2.resize(
+        pred.astype(np.float32, copy=False),
+        (gt_width, gt_height),
+        interpolation=cv2.INTER_NEAREST,
+    )
+
+
 def build_eval_dataset_class(DatasetBase):
     class EvalDataset(DatasetBase):
-        def __init__(self, dataset, prediction_path, args, depth_scale, align=False):
+        def __init__(self, dataset, output_path, args, depth_scale, align=False):
             self.dataset = dataset
-            self.prediction_path = prediction_path
+            self.prediction_path = args.prediction_dir or join(output_path, "predictions")
+            self.legacy_prediction_path = output_path
             self.args = args
             self.depth_scale = depth_scale
             self.align = align
@@ -164,9 +195,21 @@ def build_eval_dataset_class(DatasetBase):
                 self.args.max_depth,
                 self.args.min_depth,
             )
-            name = resolve_sample_name(sample[0], self.args.dataset)
+            name = sample_name_for_dataset(self.args.dataset_kind, sample[0])
 
-            pred = np.load(join(self.prediction_path, name + ".npy"))
+            pred_path = join(self.prediction_path, name + ".npy")
+            if not exists(pred_path):
+                pred_path = join(self.legacy_prediction_path, name + ".npy")
+            if not exists(pred_path):
+                raise FileNotFoundError(
+                    f"Prediction for {name} not found in "
+                    f"{self.prediction_path} or {self.legacy_prediction_path}"
+                )
+
+            pred = np.load(pred_path)
+            pred = align_prediction_shape(
+                pred, depth_GT.shape, self.args.dataset_kind, name
+            )
 
             pred_invalid_mask = np.logical_or(np.isnan(pred), np.isinf(pred))
             if pred_invalid_mask.sum() > 0:
@@ -214,17 +257,19 @@ def main():
     DatasetBase = load_runtime_dependencies()
 
     output_dir = args.output
-    prediction_path = args.prediction_dir or args.output
-    args.prediction_dir = prediction_path
+    args.prediction_dir = args.prediction_dir or join(args.output, "predictions")
     os.makedirs(output_dir, exist_ok=True)
 
-    depth_scale = args.depth_scale
-    eval_device = args.device or ("cuda" if torch.cuda.is_available() else "cpu")
+    eval_device = args.device or DEVICE
     args.device = eval_device
 
-    dataset = load_dataset_for_eval(
+    dataset, dataset_kind = load_test_dataset(
         args.dataset, args.raw_type, max_samples=args.max_samples
     )
+    args.dataset_kind = dataset_kind
+    if hasattr(dataset, "depth_scale"):
+        args.depth_scale = dataset.depth_scale
+    depth_scale = args.depth_scale
 
     with open(join(output_dir, "eval_args.json"), "w") as f:
         json.dump(vars(args), f)
@@ -246,7 +291,7 @@ def main():
     ALIGN = False
 
     EvalDataset = build_eval_dataset_class(DatasetBase)
-    eval_dataset = EvalDataset(dataset, prediction_path, args, depth_scale, align=ALIGN)
+    eval_dataset = EvalDataset(dataset, output_dir, args, depth_scale, align=ALIGN)
 
     batch_size = 1 if ALIGN else 32
     num_workers = 0 if ALIGN else 8
