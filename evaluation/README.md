@@ -12,7 +12,7 @@ evaluation/
 ├── run_hammer.sh
 ├── run_clearpose.sh
 ├── run_dreds.sh
-├── run_bs_transpose.sh
+├── run_transpose.sh
 ├── requirements.txt
 └── utils/
     ├── img_utils.py
@@ -155,13 +155,13 @@ DATASET_PATH=/path/to/TRansPose/sequences/dc_testset.jsonl \
 INTRINSICS_PATH=/path/to/TRansPose/sequences/intrinsics.txt \
 OUTPUT_DIR=/tmp/priorda_transpose_eval \
 SAVE_VIS=false \
-bash evaluation/run_bs_transpose.sh /path/to/prior_depth_anything_vitb_1_1.pth /path/to/depth_anything_v2_vitl.pth l515 vitl vitb 1.1 false
+bash evaluation/run_transpose.sh /path/to/prior_depth_anything_vitb_1_1.pth /path/to/depth_anything_v2_vitl.pth l515 vitl vitb 1.1 false
 ```
 
 参数：
 
 ```text
-bash evaluation/run_bs_transpose.sh [priorda_ckpt] [mde_ckpt] [camera_type=l515] [frozen_size=vitl] [conditioned_size=vitb] [version=1.1] [cleanup_npy=false]
+bash evaluation/run_transpose.sh [priorda_ckpt] [mde_ckpt] [camera_type=l515] [frozen_size=vitl] [conditioned_size=vitb] [version=1.1] [cleanup_npy=false]
 ```
 
 说明：

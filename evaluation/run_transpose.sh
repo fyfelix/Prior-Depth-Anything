@@ -17,7 +17,7 @@ DEFAULT_INTRINSICS_PATH="${REPO_ROOT}/data/TRansPose/sequences/intrinsics.txt"
 usage() {
     cat <<'EOF'
 Usage:
-  bash evaluation/run_bs_transpose.sh [priorda_ckpt=ckpts/prior_depth_anything_vitb_1_1.pth] [mde_ckpt=ckpts/depth_anything_v2_vitl.pth] [camera_type=l515] [frozen_size=vitl] [conditioned_size=vitb] [version=1.1] [cleanup_npy=false]
+  bash evaluation/run_transpose.sh [priorda_ckpt=ckpts/prior_depth_anything_vitb_1_1.pth] [mde_ckpt=ckpts/depth_anything_v2_vitl.pth] [camera_type=l515] [frozen_size=vitl] [conditioned_size=vitb] [version=1.1] [cleanup_npy=false]
 
 Environment overrides:
   PRIORDA_CKPT          Prior-Depth-Anything checkpoint file.
@@ -29,7 +29,7 @@ Environment overrides:
   MAX_SAMPLES           Maximum samples to evaluate. 0 means all samples. Default: 0
   DEVICE                Torch device, e.g. cuda:0.
   PATTERN               Optional Prior-Depth-Anything sparse pattern.
-  SAVE_VIS              Save 3x2 grid visualizations. Default: false
+  SAVE_VIS              Save *_grid_vis.jpg visualizations. Default: false
   INTRINSICS_PATH       Camera intrinsics text file. Default: data/TRansPose/sequences/intrinsics.txt
   PC_ROT_X_DEG          Point cloud view rotation around X axis. Default: 25.0
   PC_ROT_Y_DEG          Point cloud view rotation around Y axis. Default: 15.0
@@ -78,10 +78,13 @@ pc_knn_k="${PC_KNN_K:-16}"
 pc_knn_std_ratio="${PC_KNN_STD_RATIO:-2.0}"
 disable_pc_knn_filter="${DISABLE_PC_KNN_FILTER:-false}"
 
-if [[ "${camera_type}" != "l515" ]]; then
-    echo "TRansPose dataset only supports l515 raw type, got: ${camera_type}" >&2
-    exit 2
-fi
+case "${camera_type}" in
+    l515) ;;
+    *)
+        echo "TRansPose dataset only supports l515 raw type, got: ${camera_type}" >&2
+        exit 2
+        ;;
+esac
 
 if ! [[ "${max_samples}" =~ ^[0-9]+$ ]]; then
     echo "MAX_SAMPLES must be a non-negative integer, got: ${max_samples}" >&2
@@ -121,9 +124,15 @@ output_dir="${OUTPUT_DIR:-${model_dir}/transpose_${dataset_stub}_${model_stub}_d
 ckpt_label="${mde_ckpt}\\${priorda_ckpt}"
 
 save_vis_arg=(--save-vis "${save_vis}")
-pc_knn_filter_arg=()
+transpose_vis_arg=(
+    --intrinsics-path "${intrinsics_path}"
+    --pc-rot-x-deg "${pc_rot_x_deg}"
+    --pc-rot-y-deg "${pc_rot_y_deg}"
+    --pc-knn-k "${pc_knn_k}"
+    --pc-knn-std-ratio "${pc_knn_std_ratio}"
+)
 if [[ "${disable_pc_knn_filter}" == "true" ]]; then
-    pc_knn_filter_arg=(--disable-pc-knn-filter)
+    transpose_vis_arg+=(--disable-pc-knn-filter)
 fi
 
 echo "model class: prior_depth_anything.PriorDepthAnything"
@@ -138,8 +147,15 @@ echo "output dir: ${output_dir}"
 echo "batch size: ${batch_size}"
 echo "max samples: ${max_samples}"
 echo "save vis: ${save_vis}"
-echo "intrinsics path: ${intrinsics_path}"
 echo "cleanup npy: ${cleanup_npy}"
+if [[ "${save_vis}" == "true" ]]; then
+    echo "intrinsics path: ${intrinsics_path}"
+    echo "pc rot x deg: ${pc_rot_x_deg}"
+    echo "pc rot y deg: ${pc_rot_y_deg}"
+    echo "pc knn k: ${pc_knn_k}"
+    echo "pc knn std ratio: ${pc_knn_std_ratio}"
+    echo "disable pc knn filter: ${disable_pc_knn_filter}"
+fi
 
 infer_cmd=(
     "${PYTHON_BIN}" "${SCRIPT_DIR}/infer.py"
@@ -159,13 +175,8 @@ infer_cmd=(
     --prior-cover "${prior_cover}"
     --down-fill-mode "${down_fill_mode}"
     --clamp-to-depth-range "${clamp_to_depth_range}"
-    --intrinsics-path "${intrinsics_path}"
-    --pc-rot-x-deg "${pc_rot_x_deg}"
-    --pc-rot-y-deg "${pc_rot_y_deg}"
-    --pc-knn-k "${pc_knn_k}"
-    --pc-knn-std-ratio "${pc_knn_std_ratio}"
     "${save_vis_arg[@]}"
-    "${pc_knn_filter_arg[@]}"
+    "${transpose_vis_arg[@]}"
 )
 
 if [[ -n "${DEVICE:-}" ]]; then
