@@ -20,7 +20,7 @@ mae_linear = None
 delta4_acc_105 = None
 delta5_acc110 = None
 load_test_dataset = None
-sample_name_for_dataset = None
+sample_name_for_sample = None
 
 
 def parse_arguments():
@@ -45,7 +45,7 @@ def parse_arguments():
         "--dataset",
         type=str,
         required=True,
-        help="HAMMER, ClearPose, or DREDS JSONL path",
+        help="HAMMER, ClearPose, DREDS, or TRansPose JSONL path",
     )
     parser.add_argument(
         "--output",
@@ -64,7 +64,7 @@ def parse_arguments():
         type=str,
         required=True,
         choices=["d435", "l515", "tof"],
-        help="Raw type; ClearPose/DREDS use d435",
+        help="Raw type; ClearPose/DREDS use d435, TRansPose uses l515",
     )
     parser.add_argument(
         "--input-size", type=int, default=518, help="Input size for inference"
@@ -103,7 +103,7 @@ def load_runtime_dependencies():
     global cv2, np, pd, torch, tqdm, DataLoader, DEVICE
     global abs_relative_difference, rmse_linear, delta1_acc, mae_linear
     global delta4_acc_105, delta5_acc110
-    global load_test_dataset, sample_name_for_dataset
+    global load_test_dataset, sample_name_for_sample
 
     import cv2 as _cv2
     import numpy as _np
@@ -114,7 +114,7 @@ def load_runtime_dependencies():
     from tqdm import tqdm as _tqdm
 
     from dataset import load_test_dataset as _load_test_dataset
-    from dataset import sample_name_for_dataset as _sample_name_for_dataset
+    from dataset import sample_name_for_sample as _sample_name_for_sample
     from utils.metric import abs_relative_difference as _abs_relative_difference
     from utils.metric import delta1_acc as _delta1_acc
     from utils.metric import delta4_acc_105 as _delta4_acc_105
@@ -136,7 +136,7 @@ def load_runtime_dependencies():
     delta4_acc_105 = _delta4_acc_105
     delta5_acc110 = _delta5_acc110
     load_test_dataset = _load_test_dataset
-    sample_name_for_dataset = _sample_name_for_dataset
+    sample_name_for_sample = _sample_name_for_sample
     return _Dataset
 
 
@@ -195,12 +195,17 @@ def build_eval_dataset_class(DatasetBase):
                 self.args.max_depth,
                 self.args.min_depth,
             )
-            name = sample_name_for_dataset(self.args.dataset_kind, sample[0])
+            name = sample_name_for_sample(self.args.dataset_kind, sample)
 
             pred_path = join(self.prediction_path, name + ".npy")
-            if not exists(pred_path):
+            if not exists(pred_path) and self.args.dataset_kind != "transpose":
                 pred_path = join(self.legacy_prediction_path, name + ".npy")
             if not exists(pred_path):
+                if self.args.dataset_kind == "transpose":
+                    raise FileNotFoundError(
+                        f"TRansPose prediction for {name} not found in "
+                        f"{self.prediction_path}"
+                    )
                 raise FileNotFoundError(
                     f"Prediction for {name} not found in "
                     f"{self.prediction_path} or {self.legacy_prediction_path}"
@@ -294,7 +299,7 @@ def main():
     eval_dataset = EvalDataset(dataset, output_dir, args, depth_scale, align=ALIGN)
 
     batch_size = 1 if ALIGN else 32
-    num_workers = 0 if ALIGN else 8
+    num_workers = 0 if ALIGN or not eval_device.startswith("cuda") else 8
 
     loader = DataLoader(
         eval_dataset,
